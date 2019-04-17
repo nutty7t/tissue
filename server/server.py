@@ -3,6 +3,8 @@ import argparse
 import sqlite3
 
 app = Flask(__name__)
+DATABASE_FILE = "./tissue.db"
+SCHEMA_FILE = "./schema.sql"
 
 def get_database_connection():
     """
@@ -10,7 +12,7 @@ def get_database_connection():
     """
     connection = getattr(g, "database", None)
     if connection is None:
-        g.database = sqlite3.connect("tissue.db")
+        g.database = sqlite3.connect(DATABASE_FILE)
         connection = g.database
     return connection
 
@@ -53,6 +55,17 @@ def delete_issue(id):
     return "Not implemented.", 501
 
 if __name__ == "__main__":
+    # Setup database schema.
+    with open(SCHEMA_FILE) as schema:
+        statements = schema.read().split("\n\n")
+        connection = sqlite3.connect(DATABASE_FILE)
+        cursor = connection.cursor()
+        for statement in statements:
+            cursor.execute(statement)
+        connection.commit()
+        connection.close()
+
+    # Parse port number.
     parser = argparse.ArgumentParser(
         description="tissue: a tiny issue tracker server"
     )
@@ -64,5 +77,7 @@ if __name__ == "__main__":
         default=5000
     )
     args = parser.parse_args()
+
+    # Start HTTP server.
     app.run(debug=True, host="0.0.0.0", port=args.port)
 
