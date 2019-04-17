@@ -1,7 +1,28 @@
-from flask import Flask
+from flask import Flask, g
 import argparse
+import sqlite3
 
 app = Flask(__name__)
+
+def get_database_connection():
+    """
+    Get a SQLite database connection from the application context.
+    """
+    connection = getattr(g, "database", None)
+    if connection is None:
+        g.database = sqlite3.connect("tissue.db")
+        connection = g.database
+    return connection
+
+@app.teardown_appcontext
+def close_database_connection(exception):
+    """
+    Automatically closes the database connection resource in the
+    application context at the end of a request.
+    """
+    connection = getattr(g, "database", None)
+    if connection is not None:
+        connection.close()
 
 @app.route("/")
 def tissue():
