@@ -5,5 +5,5 @@ ADD requirements.txt /
 RUN pip install -r requirements.txt
 
 EXPOSE 5000
-ENTRYPOINT ["python", "server.py"]
+ENTRYPOINT ["python", "server.py", "--port", "5000"]
 
