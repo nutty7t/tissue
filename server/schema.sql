@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS tag (
 	predicate TEXT NOT NULL,
 	value TEXT NOT NULL,
 	issue_id integer NOT NULL,
-	FOREIGN KEY (issue_id) REFERENCES issue (id)
+	FOREIGN KEY (issue_id) REFERENCES issue (id),
+	UNIQUE (namespace, predicate, value, issue_id)
 );
 
