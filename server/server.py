@@ -14,6 +14,7 @@ def get_database_connection():
     if connection is None:
         g.database = sqlite3.connect(DATABASE_FILE)
         connection = g.database
+        connection.row_factory = sqlite3.Row
     return connection
 
 @app.teardown_appcontext
