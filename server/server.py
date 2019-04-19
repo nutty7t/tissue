@@ -1,4 +1,4 @@
-from flask import Flask, g
+from flask import Flask, g, jsonify
 import argparse
 import sqlite3
 
@@ -37,7 +37,48 @@ def api():
 
 @app.route("/api/issue/<int:id>", methods=["GET"])
 def get_issue(id):
-    return "Not implemented.", 501
+    cursor = get_database_connection().cursor()
+    cursor.execute(f"""
+        SELECT
+            issue.id,
+            issue.title,
+            issue.description,
+            tag.namespace,
+            tag.predicate,
+            tag.value
+        FROM
+            issue LEFT JOIN tag
+            ON issue.id = tag.issue_id
+        WHERE
+            issue.id = {id}
+    """)
+
+    issues = {}
+    for row in cursor:
+        if row["id"] not in issues:
+            issues[row["id"]] = {
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "tags": [],
+            }
+        if row["value"]:
+            issues[row["id"]]["tags"].append({
+                "namespace": row["namespace"],
+                "predicate": row["predicate"],
+                "value": row["value"],
+            })
+
+    errors = []
+    status_code = 200
+    if len(issues.values()) == 0:
+        errors.append(f"issue #{id} does not exist")
+        status_code = 404
+
+    return jsonify({
+        "data": list(issues.values()),
+        "errors": errors,
+    }), status_code
 
 @app.route("/api/issue/<int:id>", methods=["POST"])
 def create_issue(id):
