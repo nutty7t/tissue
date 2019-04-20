@@ -179,11 +179,9 @@ def delete_issue(id):
 if __name__ == "__main__":
     # Setup database schema.
     with open(SCHEMA_FILE) as schema:
-        statements = schema.read().split("\n\n")
         connection = sqlite3.connect(DATABASE_FILE)
         cursor = connection.cursor()
-        for statement in statements:
-            cursor.execute(statement)
+        cursor.executescript(schema.read())
         connection.commit()
         connection.close()
 
