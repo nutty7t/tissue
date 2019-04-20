@@ -2,58 +2,107 @@ from flask import Flask, g, jsonify, request
 from jsonschema import validate, ValidationError
 
 import argparse
+import functools
 import sqlite3
 
 app = Flask(__name__)
 DATABASE_FILE = "./tissue.db"
 SCHEMA_FILE = "./schema.sql"
 
-# The following JSON schema defines the structure of issues and tags
-# as they appear in HTTP request and response payloads.
-JSON_SCHEMA = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "definitions": {
-        "tag": {
-            "type": "object",
-            "required": [
-                "namespace",
-                "predicate",
-                "value",
-            ],
-            "properties": {
-                "namespace": {
-                    "type": "string",
-                },
-                "predicate": {
-                    "type": "string",
-                },
-                "value": {
-                    "type": ["string", "number"],
-                },
-            },
-        },
-        "issue": {
-            "type": "object",
-            "required": ["title"],
-            "properties": {
-                "title": {
-                    "type": "string",
-                },
-                "description": {
-                    "type": "string",
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/tag",
+def validate_request_payload(require_id=False):
+    """
+    Function decorator that validates a request payload against the JSON
+    schema. If `require_id` is True, then the issue definition will
+    require an `id` property.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            request_schema = {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "definitions": {
+                    "tag": {
+                        "type": "object",
+                        "required": [
+                            "namespace",
+                            "predicate",
+                            "value",
+                        ],
+                        "properties": {
+                            "namespace": {
+                                "type": "string",
+                            },
+                            "predicate": {
+                                "type": "string",
+                            },
+                            "value": {
+                                "type": ["number", "string"],
+                            },
+                        },
                     },
-                    "default": [],
-                    "minItems": 0,
+                    "issue": {
+                        "type": "object",
+                        "required": ["title"],
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                            },
+                            "description": {
+                                "type": "string",
+                            },
+                            "tags": {
+                                "type": "array",
+                                "default": [],
+                                "minItems": 0,
+                                "items": {
+                                    "$ref": "#/definitions/tag",
+                                },
+                            },
+                        },
+                    },
                 },
-            },
-        }
-    },
-}
+            }
+
+            # Patch the JSON schema with an added required `id` property in the issue
+            # definition for the UPDATE, PATCH, and DELETE operations; which require
+            # the `id` property to identity which issues to modify or delete.
+            if require_id:
+                request_schema["definitions"]["issue"]["required"].append("id")
+                request_schema["definitions"]["issue"]["properties"]["id"] = {
+                    "type": ["integer", "string"],
+                }
+
+            request_schema = {
+                **request_schema,
+                **{
+                    "type": "object",
+                    "properties": {
+                        "data": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "$ref": "#/definitions/issue",
+                            },
+                        },
+                    },
+                },
+            }
+
+            request_payload = request.get_json()
+            try:
+                validate(
+                    instance=request_payload,
+                    schema=request_schema,
+                )
+            except ValidationError:
+                return jsonify({
+                    "data": [],
+                    "errors": ["failed to validate payload against json schema"],
+                }), 400
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 def get_database_connection():
     """
@@ -131,36 +180,8 @@ def get_issue(id):
     }), status_code
 
 @app.route("/api/issue", methods=["POST"])
+@validate_request_payload()
 def create_issue():
-    request_payload = request.get_json()
-    request_schema = {
-        **JSON_SCHEMA,
-        **{
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/issue",
-                    },
-                    "minItems": 1,
-                },
-            },
-        },
-    }
-
-    try:
-        validate(
-            instance=request_payload,
-            schema=request_schema,
-        )
-
-    except ValidationError:
-        return jsonify({
-            "data": [],
-            "errors": ["failed to validate payload against json schema"],
-        }), 400
-
     # [todo] Validate the issue(s) against Prolog rules.
 
     # Attempt to create issues and tags in SQLite.
@@ -168,7 +189,7 @@ def create_issue():
     connection = get_database_connection()
     try:
         with connection:
-            for issue in request_payload["data"]:
+            for issue in request.get_json()["data"]:
                 # Create issue.
                 cursor = connection.cursor()
                 cursor.execute(f"""
@@ -214,7 +235,12 @@ def create_issue():
     return "Not implemented.", 501
 
 @app.route("/api/issue/<int:id>", methods=["PUT"])
+@validate_request_payload(require_id=True)
 def replace_issue(id):
+    # [todo] Validate the issue(s) against Prolog rules.
+    # [todo] Write the patched changes to SQLite.
+    # [todo] Return the patched issue(s).
+
     return "Not implemented.", 501
 
 @app.route("/api/issue/<int:id>", methods=["PATCH"])
