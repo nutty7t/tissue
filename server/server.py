@@ -64,6 +64,7 @@ def get_database_connection():
         g.database = sqlite3.connect(DATABASE_FILE)
         connection = g.database
         connection.row_factory = sqlite3.Row
+
     return connection
 
 @app.teardown_appcontext
@@ -147,11 +148,13 @@ def create_issue():
             },
         },
     }
+
     try:
         validate(
             instance=request_payload,
             schema=request_schema,
         )
+
     except ValidationError:
         return jsonify({
             "data": [],
@@ -159,7 +162,53 @@ def create_issue():
         }), 400
 
     # [todo] Validate the issue(s) against Prolog rules.
-    # [todo] Create the issue(s) in SQLite.
+
+    # Attempt to create issues and tags in SQLite.
+    # Rollback in the event of an exception.
+    connection = get_database_connection()
+    try:
+        with connection:
+            for issue in request_payload["data"]:
+                # Create issue.
+                cursor = connection.cursor()
+                cursor.execute(f"""
+                    INSERT INTO issue (
+                        title,
+                        description
+                    )
+                    VALUES (
+                        "{issue["title"]}",
+                        "{issue.get("description", "")}"
+                    )
+                """)
+
+                # Add tags to issue.
+                issue_id = cursor.lastrowid
+                for tag in issue.get("tags", []):
+                    cursor.execute(f"""
+                        INSERT INTO tag (
+                            namespace,
+                            predicate,
+                            value,
+                            issue_id
+                        )
+                        VALUES (
+                            "{tag["namespace"]}",
+                            "{tag["predicate"]}",
+                            "{tag["value"]}",
+                            "{issue_id}"
+                        )
+                    """)
+
+    except sqlite3.IntegrityError as error:
+        return jsonify({
+            "data": [],
+            "errors": [
+                "failed to create rows in sqlite",
+                str(error),
+            ],
+        }), 400
+
     # [todo] Return the created issue(s).
 
     return "Not implemented.", 501
