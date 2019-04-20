@@ -7,7 +7,8 @@ PRAGMA foreign_keys = 1;
 CREATE TABLE IF NOT EXISTS issue (
 	id integer PRIMARY KEY,
 	title TEXT NOT NULL,
-	description TEXT
+	description TEXT NOT NULL,
+	CHECK (title <> "")
 );
 
 -- Tag Table
@@ -18,6 +19,9 @@ CREATE TABLE IF NOT EXISTS tag (
 	value TEXT NOT NULL,
 	issue_id integer NOT NULL,
 	FOREIGN KEY (issue_id) REFERENCES issue (id),
-	UNIQUE (namespace, predicate, value, issue_id)
+	UNIQUE (namespace, predicate, value, issue_id),
+	CHECK (namespace <> ""),
+	CHECK (predicate <> ""),
+	CHECK (value <> "")
 );
 

@@ -49,7 +49,6 @@ JSON_SCHEMA = {
                     },
                     "default": [],
                     "minItems": 0,
-                    "uniqueItems": True,
                 },
             },
         }
@@ -144,7 +143,6 @@ def create_issue():
                         "$ref": "#/definitions/issue",
                     },
                     "minItems": 1,
-                    "uniqueItems": True,
                 },
             },
         },
