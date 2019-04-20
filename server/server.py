@@ -1,10 +1,60 @@
-from flask import Flask, g, jsonify
+from flask import Flask, g, jsonify, request
+from jsonschema import validate, ValidationError
+
 import argparse
 import sqlite3
 
 app = Flask(__name__)
 DATABASE_FILE = "./tissue.db"
 SCHEMA_FILE = "./schema.sql"
+
+# The following JSON schema defines the structure of issues and tags
+# as they appear in HTTP request and response payloads.
+JSON_SCHEMA = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+        "tag": {
+            "type": "object",
+            "required": [
+                "namespace",
+                "predicate",
+                "value",
+            ],
+            "properties": {
+                "namespace": {
+                    "type": "string",
+                },
+                "predicate": {
+                    "type": "string",
+                },
+                "value": {
+                    "type": ["string", "number"],
+                },
+            },
+        },
+        "issue": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+                "title": {
+                    "type": "string",
+                },
+                "description": {
+                    "type": "string",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tag",
+                    },
+                    "default": [],
+                    "minItems": 0,
+                    "uniqueItems": True,
+                },
+            },
+        }
+    },
+}
 
 def get_database_connection():
     """
@@ -80,8 +130,40 @@ def get_issue(id):
         "errors": errors,
     }), status_code
 
-@app.route("/api/issue/<int:id>", methods=["POST"])
-def create_issue(id):
+@app.route("/api/issue", methods=["POST"])
+def create_issue():
+    request_payload = request.get_json()
+    request_schema = {
+        **JSON_SCHEMA,
+        **{
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/issue",
+                    },
+                    "minItems": 1,
+                    "uniqueItems": True,
+                },
+            },
+        },
+    }
+    try:
+        validate(
+            instance=request_payload,
+            schema=request_schema,
+        )
+    except ValidationError:
+        return jsonify({
+            "data": [],
+            "errors": ["failed to validate payload against json schema"],
+        }), 400
+
+    # [todo] Validate the issue(s) against Prolog rules.
+    # [todo] Create the issue(s) in SQLite.
+    # [todo] Return the created issue(s).
+
     return "Not implemented.", 501
 
 @app.route("/api/issue/<int:id>", methods=["PUT"])
