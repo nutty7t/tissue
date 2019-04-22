@@ -298,6 +298,15 @@ def issue_put_endpoint():
                 if fetched_issue is None:
                     create_issue(cursor, issue)
                 else:
+                    # Ensure that all fields are being updated. PUT has
+                    # replace semantics. For updating a subset of fields,
+                    # PATCH should be used.
+                    if "title" not in issue:
+                        issue["title"] = ""
+                    if "description" not in issue:
+                        issue["description"] = ""
+                    if "tags" not in issue:
+                        issue["tags"] = []
                     update_issue(cursor, issue["id"], issue)
     except Exception as error:
         print(error)
