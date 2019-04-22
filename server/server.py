@@ -5,6 +5,11 @@ import argparse
 import functools
 import sqlite3
 
+"""
+[todo] Replace query string concatenations with DB-API’s parameter
+substitution to avoid SQL injection attacks.
+"""
+
 app = Flask(__name__)
 DATABASE_FILE = "./tissue.db"
 SCHEMA_FILE = "./schema.sql"
@@ -126,17 +131,11 @@ def close_database_connection(exception):
     if connection is not None:
         connection.close()
 
-@app.route("/")
-def tissue():
-    return "tissue -- a tiny issue tracker server\n"
-
-@app.route("/api")
-def api():
-    return "Not implemented.", 501
-
-@app.route("/api/issue/<int:id>", methods=["GET"])
-def get_issue(id):
-    cursor = get_database_connection().cursor()
+def fetch_issue(cursor, id):
+    """
+    Fetch an issue by id along with its tags. Returns None if no issue
+    with the specified id exists in the database.
+    """
     cursor.execute(f"""
         SELECT
             issue.id,
@@ -152,25 +151,106 @@ def get_issue(id):
             issue.id = {id}
     """)
 
-    issues = {}
+    issue = None
     for row in cursor:
-        if row["id"] not in issues:
-            issues[row["id"]] = {
+        if issue is None:
+            issue = {
                 "id": row["id"],
                 "title": row["title"],
                 "description": row["description"],
                 "tags": [],
             }
+        # If tag exists in row, add to issue.
         if row["value"]:
-            issues[row["id"]]["tags"].append({
+            issue["tags"].append({
                 "namespace": row["namespace"],
                 "predicate": row["predicate"],
                 "value": row["value"],
             })
 
+    return issue
+
+def create_issue(cursor, issue):
+    """
+    Create an issue with tags.
+    """
+    cursor.execute(f"""
+        INSERT INTO issue (
+            title,
+            description
+        )
+        VALUES (
+            "{issue["title"]}",
+            "{issue.get("description", "")}"
+        )
+    """)
+    issue_id = cursor.lastrowid
+    for tag in issue.get("tags", []):
+        cursor.execute(f"""
+            INSERT INTO tag (
+                namespace,
+                predicate,
+                value,
+                issue_id
+            )
+            VALUES (
+                "{tag["namespace"]}",
+                "{tag["predicate"]}",
+                "{tag["value"]}",
+                "{issue_id}"
+            )
+        """)
+
+def update_issue(cursor, id, fields):
+    """
+    Update the issue specified by the id field.
+    """
+    updated_fields = {}
+    if "title" in fields:
+        updated_fields["title"] = fields["title"]
+    if "description" in fields:
+        updated_fields["description"] = fields["description"]
+
+    set_clause_args = ", ".join(map(
+        lambda kv: f"{kv[0]} = \"{kv[1]}\"",
+        updated_fields.items(),
+    ))
+
+    cursor.execute(f"""
+        UPDATE issue
+        SET {set_clause_args}
+        WHERE id = {id}
+    """)
+
+    cursor.execute(f"""
+        DELETE FROM tag
+        WHERE issue_id = {id}
+    """)
+
+    for tag in fields["tags"]:
+        cursor.execute(f"""
+            INSERT INTO tag (
+                namespace,
+                predicate,
+                value,
+                issue_id
+            )
+            VALUES (
+                "{tag["namespace"]}",
+                "{tag["predicate"]}",
+                "{tag["value"]}",
+                "{id}"
+            )
+        """)
+
+@app.route("/api/issue/<int:id>", methods=["GET"])
+def issue_get_endpoint(id):
+    cursor = get_database_connection().cursor()
+    issue = fetch_issue(cursor, id)
+
     errors = []
     status_code = 200
-    if len(issues.values()) == 0:
+    if issue is None:
         errors.append(f"issue #{id} does not exist")
         status_code = 404
 
@@ -181,7 +261,7 @@ def get_issue(id):
 
 @app.route("/api/issue", methods=["POST"])
 @validate_request_payload()
-def create_issue():
+def issue_post_endpoint():
     # [todo] Validate the issue(s) against Prolog rules.
 
     # Attempt to create issues and tags in SQLite.
@@ -190,37 +270,7 @@ def create_issue():
     try:
         with connection:
             for issue in request.get_json()["data"]:
-                # Create issue.
-                cursor = connection.cursor()
-                cursor.execute(f"""
-                    INSERT INTO issue (
-                        title,
-                        description
-                    )
-                    VALUES (
-                        "{issue["title"]}",
-                        "{issue.get("description", "")}"
-                    )
-                """)
-
-                # Add tags to issue.
-                issue_id = cursor.lastrowid
-                for tag in issue.get("tags", []):
-                    cursor.execute(f"""
-                        INSERT INTO tag (
-                            namespace,
-                            predicate,
-                            value,
-                            issue_id
-                        )
-                        VALUES (
-                            "{tag["namespace"]}",
-                            "{tag["predicate"]}",
-                            "{tag["value"]}",
-                            "{issue_id}"
-                        )
-                    """)
-
+                create_issue(connection.cursor(), issue)
     except sqlite3.IntegrityError as error:
         return jsonify({
             "data": [],
@@ -234,21 +284,35 @@ def create_issue():
 
     return "Not implemented.", 501
 
-@app.route("/api/issue/<int:id>", methods=["PUT"])
+@app.route("/api/issue", methods=["PUT"])
 @validate_request_payload(require_id=True)
-def replace_issue(id):
+def issue_put_endpoint():
     # [todo] Validate the issue(s) against Prolog rules.
-    # [todo] Write the patched changes to SQLite.
+
+    connection = get_database_connection()
+    try:
+        with connection:
+            cursor = connection.cursor()
+            for issue in request.get_json().get("data", {}):
+                fetched_issue = fetch_issue(cursor, issue.get("id", -1))
+                if fetched_issue is None:
+                    create_issue(cursor, issue)
+                else:
+                    update_issue(cursor, issue["id"], issue)
+    except Exception as error:
+        print(error)
+        return jsonify({"error": str(error)}), 500
+
     # [todo] Return the patched issue(s).
 
     return "Not implemented.", 501
 
 @app.route("/api/issue/<int:id>", methods=["PATCH"])
-def update_issue(id):
+def issue_patch_endpoint(id):
     return "Not implemented.", 501
 
 @app.route("/api/issue/<int:id>", methods=["DELETE"])
-def delete_issue(id):
+def issue_delete_endpoint(id):
     return "Not implemented.", 501
 
 if __name__ == "__main__":
