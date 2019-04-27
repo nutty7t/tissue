@@ -89,6 +89,11 @@ def test_fetch_issue():
                 ],
             },
         },
+        {
+            "name": "issue not found",
+            "issue_id": 81132329,
+            "expected": None,
+        },
     ]
     for test_case in test_cases:
         sqlite_setup, sqlite_teardown = mock(sqlite_fixture)
@@ -96,4 +101,5 @@ def test_fetch_issue():
         actual = fetch_issue(mock_connection.cursor(), test_case["issue_id"])
         assert actual == test_case["expected"]
         sqlite_teardown()
+
 
