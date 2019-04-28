@@ -5,11 +5,12 @@ verify_ssl = true
 
 [dev-packages]
 pynvim = "*"
+pytest = "*"
+pytest-cov = "*"
 
 [packages]
 flask = "*"
 jsonschema = "*"
-pytest = "*"
 
 [requires]
 python_version = "3.7"
