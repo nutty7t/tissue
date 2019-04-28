@@ -74,7 +74,7 @@ def sqlite_fixture():
 def test_fetch_issue():
     test_cases = [
         {
-            "name": "happy path",
+            "name": "issue with tag",
             "issue_id": 1,
             "expected": {
                 "id": 1,
@@ -87,6 +87,16 @@ def test_fetch_issue():
                         "value": "Maplestory",
                     },
                 ],
+            },
+        },
+        {
+            "name": "issue without tags",
+            "issue_id": 6,
+            "expected": {
+                "id": 6,
+                "title": "Lonely Issue",
+                "description": "This issue has no tags.",
+                "tags": [],
             },
         },
         {
