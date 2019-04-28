@@ -5,14 +5,10 @@ import argparse
 import functools
 import sqlite3
 
-"""
-[todo] Replace query string concatenations with DB-API’s parameter
-substitution to avoid SQL injection attacks.
-"""
-
 app = Flask(__name__)
 DATABASE_FILE = "./tissue.db"
 SCHEMA_FILE = "./schema.sql"
+
 
 def validate_request_payload(require_id=False):
     """
@@ -136,7 +132,7 @@ def fetch_issue(cursor, id):
     Fetch an issue by id along with its tags. Returns None if no issue
     with the specified id exists in the database.
     """
-    cursor.execute(f"""
+    cursor.execute("""
         SELECT
             issue.id,
             issue.title,
@@ -148,8 +144,8 @@ def fetch_issue(cursor, id):
             issue LEFT JOIN tag
             ON issue.id = tag.issue_id
         WHERE
-            issue.id = {id}
-    """)
+            issue.id = ?
+    """, (id,))
 
     issue = None
     for row in cursor:
@@ -174,33 +170,25 @@ def create_issue(cursor, issue):
     """
     Create an issue with tags.
     """
-    cursor.execute(f"""
-        INSERT INTO issue (
-            title,
-            description
-        )
-        VALUES (
-            "{issue["title"]}",
-            "{issue.get("description", "")}"
-        )
-    """)
+    cursor.execute("""
+        INSERT INTO issue (title, description)
+        VALUES (?, ?)
+    """, (
+        issue["title"],
+        issue.get("description", "")
+    ))
 
     issue_id = cursor.lastrowid
     for tag in issue.get("tags", []):
         cursor.execute(f"""
-            INSERT INTO tag (
-                namespace,
-                predicate,
-                value,
-                issue_id
-            )
-            VALUES (
-                "{tag.get("namespace", "")}",
-                "{tag.get("predicate", "")}",
-                "{tag.get("value", "")}",
-                "{issue_id}"
-            )
-        """)
+            INSERT INTO tag (namespace, predicate, value, issue_id)
+            VALUES (?, ?, ?, ?)
+        """, (
+            tag.get("namespace", ""),
+            tag.get("predicate", ""),
+            tag.get("value", ""),
+            issue_id,
+        ))
 
     return issue_id
 
@@ -215,38 +203,34 @@ def update_issue(cursor, id, fields):
     if "description" in fields:
         updated_fields["description"] = fields["description"]
 
-    set_clause_args = ", ".join(map(
-        lambda kv: f"{kv[0]} = \"{kv[1]}\"",
-        updated_fields.items(),
-    ))
-
     if len(updated_fields) != 0:
-        cursor.execute(f"""
-            UPDATE issue
-            SET {set_clause_args}
-            WHERE id = {id}
-        """)
+        # Construct a variadic SQL query (in terms of DB-API's parameter
+        # substitution) based on the number of fields that will get updated.
+        set_clause_args = ", ".join(map(
+            lambda key: f"{key} = ?",
+            updated_fields.keys()
+        ))
+        cursor.execute(
+            f"UPDATE issue SET {set_clause_args} WHERE id = ?",
+            (*updated_fields.values(), str(id)),
+        )
 
-    cursor.execute(f"""
-        DELETE FROM tag
-        WHERE issue_id = {id}
-    """)
-
+    cursor.execute("DELETE FROM tag WHERE issue_id = ?", str(id))
     for tag in fields.get("tags", []):
-        cursor.execute(f"""
+        cursor.execute("""
             INSERT INTO tag (
                 namespace,
                 predicate,
                 value,
                 issue_id
             )
-            VALUES (
-                "{tag["namespace"]}",
-                "{tag["predicate"]}",
-                "{tag["value"]}",
-                "{id}"
-            )
-        """)
+            VALUES (?, ?, ?, ?)
+        """, (
+            tag["namespace"],
+            tag["predicate"],
+            tag["value"],
+            str(id),
+        ))
 
 @app.route("/api/issue/<int:id>", methods=["GET"])
 def issue_get_endpoint(id):
