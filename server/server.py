@@ -184,6 +184,7 @@ def create_issue(cursor, issue):
             "{issue.get("description", "")}"
         )
     """)
+
     issue_id = cursor.lastrowid
     for tag in issue.get("tags", []):
         cursor.execute(f"""
@@ -194,12 +195,15 @@ def create_issue(cursor, issue):
                 issue_id
             )
             VALUES (
-                "{tag["namespace"]}",
-                "{tag["predicate"]}",
-                "{tag["value"]}",
+                "{tag.get("namespace", "")}",
+                "{tag.get("predicate", "")}",
+                "{tag.get("value", "")}",
                 "{issue_id}"
             )
         """)
+
+    return issue_id
+
 
 def update_issue(cursor, id, fields):
     """
@@ -316,6 +320,7 @@ def issue_put_endpoint():
 
     return "Not implemented.", 501
 
+@app.route("/api/issue", methods=["PATCH"])
 @app.route("/api/issue/<int:id>", methods=["PATCH"])
 def issue_patch_endpoint(id):
     return "Not implemented.", 501
