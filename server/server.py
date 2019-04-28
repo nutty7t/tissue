@@ -220,18 +220,19 @@ def update_issue(cursor, id, fields):
         updated_fields.items(),
     ))
 
-    cursor.execute(f"""
-        UPDATE issue
-        SET {set_clause_args}
-        WHERE id = {id}
-    """)
+    if len(updated_fields) != 0:
+        cursor.execute(f"""
+            UPDATE issue
+            SET {set_clause_args}
+            WHERE id = {id}
+        """)
 
     cursor.execute(f"""
         DELETE FROM tag
         WHERE issue_id = {id}
     """)
 
-    for tag in fields["tags"]:
+    for tag in fields.get("tags", []):
         cursor.execute(f"""
             INSERT INTO tag (
                 namespace,
