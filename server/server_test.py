@@ -450,7 +450,6 @@ def test_update_issue():
 
         try:
             cursor = mock_connection.cursor()
-            print(test_case["issueId"])
             update_issue(cursor, test_case["issueId"], test_case["fields"])
         except Exception:
             assert test_case["expectedException"]
