@@ -251,8 +251,6 @@ def issue_get_endpoint(id):
 @app.route("/api/issue", methods=["POST"])
 @validate_request_payload()
 def issue_post_endpoint():
-    # [todo] Validate the issue(s) against Prolog rules.
-
     # Attempt to create issues and tags in SQLite.
     # Rollback in the event of an exception.
     connection = get_database_connection()
@@ -260,6 +258,9 @@ def issue_post_endpoint():
         with connection:
             for issue in request.get_json()["data"]:
                 create_issue(connection.cursor(), issue)
+
+        # [todo] Validate the issue(s) against Prolog rules.
+
     except sqlite3.IntegrityError as error:
         return jsonify({
             "data": [],
@@ -276,14 +277,12 @@ def issue_post_endpoint():
 @app.route("/api/issue", methods=["PUT"])
 @validate_request_payload(require_id=True)
 def issue_put_endpoint():
-    # [todo] Validate the issue(s) against Prolog rules.
-
     connection = get_database_connection()
     try:
         with connection:
             cursor = connection.cursor()
-            for issue in request.get_json().get("data", {}):
-                fetched_issue = fetch_issue(cursor, issue.get("id", -1))
+            for issue in request.get_json()["data"]:
+                fetched_issue = fetch_issue(cursor, issue["id"])
                 if fetched_issue is None:
                     create_issue(cursor, issue)
                 else:
@@ -297,6 +296,9 @@ def issue_put_endpoint():
                     if "tags" not in issue:
                         issue["tags"] = []
                     update_issue(cursor, issue["id"], issue)
+
+            # [todo] Validate the issue(s) against Prolog rules.
+
     except Exception as error:
         print(error)
         return jsonify({"error": str(error)}), 500
@@ -307,11 +309,45 @@ def issue_put_endpoint():
 
 @app.route("/api/issue", methods=["PATCH"])
 @app.route("/api/issue/<int:id>", methods=["PATCH"])
+@validate_request_payload(require_id=True)
 def issue_patch_endpoint(id):
+    connection = get_database_connection()
+    try:
+        with connection:
+            cursor = connection.cursor()
+            for issue in request.get_json()["data"]:
+                fetched_issue = fetched_issue(cursor, issue["id"])
+                if fetched_issue is None:
+                    return jsonify({"error": f"issue #{issue['id']} not found"}), 404
+                else:
+                    update_issue(cursor, issue["id"], issue)
+
+            # [todo] Validate the issue(s) against Prolog rules.
+            # Do it within the connection context so we can rollback
+            # if validation fails.
+
+    except Exception as error:
+        print(error)
+        return jsonify({"error": str(error)}), 500
+
+    # [todo] Return the patched issue(s).
+
     return "Not implemented.", 501
 
+@app.route("/api/issue", methods=["DELETE"])
 @app.route("/api/issue/<int:id>", methods=["DELETE"])
 def issue_delete_endpoint(id):
+    # [todo] Implement batch deletion with `/api/issue` endpoint.
+    connection = get_database_connection()
+    try:
+        with connection:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM issue WHERE id = ?", (id,))
+            cursor.execute("DELETE FROM tag WHERE issue_id = ?", (id,))
+    except Exception as error:
+        print(error)
+        return jsonify({"error": str(error)}), 500
+
     return "Not implemented.", 501
 
 if __name__ == "__main__":
