@@ -5,6 +5,7 @@ from server import (
     SCHEMA_FILE,
     create_issue,
     fetch_issue,
+    update_issue,
 )
 
 
@@ -75,7 +76,7 @@ def test_fetch_issue():
     test_cases = [
         {
             "name": "issue with tag",
-            "issue_id": 1,
+            "issueId": 1,
             "expected": {
                 "id": 1,
                 "title": "Leave Maple Island",
@@ -91,7 +92,7 @@ def test_fetch_issue():
         },
         {
             "name": "issue without tags",
-            "issue_id": 6,
+            "issueId": 6,
             "expected": {
                 "id": 6,
                 "title": "Lonely Issue",
@@ -101,7 +102,7 @@ def test_fetch_issue():
         },
         {
             "name": "issue not found",
-            "issue_id": 81132329,
+            "issueId": 81132329,
             "expected": None,
         },
     ]
@@ -109,7 +110,7 @@ def test_fetch_issue():
     for test_case in test_cases:
         sqlite_setup, sqlite_teardown = mock(sqlite_fixture)
         mock_connection = sqlite_setup()
-        actual = fetch_issue(mock_connection.cursor(), test_case["issue_id"])
+        actual = fetch_issue(mock_connection.cursor(), test_case["issueId"])
         assert actual == test_case["expected"]
         sqlite_teardown()
 
@@ -305,8 +306,8 @@ def test_create_issue():
             continue
         assert not test_case["expectedException"]
 
-        # Check that the issue was created.
-        cursor.execute(f"""
+        # Did the issue get created?
+        cursor.execute("""
             SELECT *
             FROM issue
             WHERE id = ?
@@ -317,9 +318,9 @@ def test_create_issue():
         assert results[0]["title"] == test_case["expectedIssue"]["title"]
         assert results[0]["description"] == test_case["expectedIssue"]["description"]
 
-        # Check that the tags were created.
+        # Did the tags get created?
         for tag in test_case["expectedTags"]:
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT *
                 FROM tag
                 WHERE
@@ -329,6 +330,157 @@ def test_create_issue():
                     value = ?
             """, (
                 issue_id,
+                tag["namespace"],
+                tag["predicate"],
+                tag["value"],
+            ))
+            assert len(cursor.fetchall()) == 1
+
+        sqlite_teardown()
+
+
+def test_update_issue():
+    test_cases = [
+        {
+            "name": "no update fields (removing tags)",
+            "issueId": 1,
+            "fields": {},
+            "expectedIssue": {
+                "title": "Leave Maple Island",
+                "description": "There's a boat in Southperry.",
+            },
+            "expectedTags": [],
+            "expectedException": False,
+        },
+        {
+            "name": "update multiple fields (removing tags)",
+            "issueId": 5,
+            "fields": {
+                "title": "Talk to Athena Pierce",
+                "description": "Become a bowman.",
+            },
+            "expectedIssue": {
+                "title": "Talk to Athena Pierce",
+                "description": "Become a bowman.",
+            },
+            "expectedTags": [],
+            "expectedException": False,
+        },
+        {
+            "name": "update multiple fields (preserving tags)",
+            "issueId": 5,
+            "fields": {
+                "title": "Talk to Athena Pierce",
+                "description": "Become a bowman.",
+                "tags": [
+                    {
+                        "namespace": "project",
+                        "predicate": "name",
+                        "value": "Maplestory",
+                    },
+                ],
+            },
+            "expectedIssue": {
+                "title": "Talk to Athena Pierce",
+                "description": "Become a bowman.",
+            },
+            "expectedTags": [
+                {
+                    "namespace": "project",
+                    "predicate": "name",
+                    "value": "Maplestory",
+                },
+            ],
+            "expectedException": False,
+        },
+        {
+            "name": "update title to empty string",
+            "issueId": 6,
+            "fields": {
+                "title": "",
+            },
+            "expectedIssue": None,
+            "expectedTags": [],
+            "expectedException": True,
+        },
+        {
+            "name": "update description to empty string",
+            "issueId": 6,
+            "fields": {
+                "description": "",
+            },
+            "expectedIssue": {
+                "title": "Lonely Issue",
+                "description": "",
+            },
+            "expectedTags": [],
+            "expectedException": False,
+        },
+        {
+            "name": "add tag to tagless issue",
+            "issueId": 6,
+            "fields": {
+                "description": "This issue has one tag.",
+                "tags": [
+                    {
+                        "namespace": "project",
+                        "predicate": "name",
+                        "value": "Loners",
+                    },
+                ],
+            },
+            "expectedIssue": {
+                "title": "Lonely Issue",
+                "description": "This issue has one tag.",
+            },
+            "expectedTags": [
+                {
+                    "namespace": "project",
+                    "predicate": "name",
+                    "value": "Loners",
+                },
+            ],
+            "expectedException": False,
+        },
+    ]
+
+    for test_case in test_cases:
+        sqlite_setup, sqlite_teardown = mock(sqlite_fixture)
+        mock_connection = sqlite_setup()
+
+        try:
+            cursor = mock_connection.cursor()
+            print(test_case["issueId"])
+            update_issue(cursor, test_case["issueId"], test_case["fields"])
+        except Exception:
+            assert test_case["expectedException"]
+            continue
+        assert not test_case["expectedException"]
+
+        # Did the issue get updated?
+        cursor.execute("""
+            SELECT *
+            FROM issue
+            WHERE id = ?
+        """, (test_case["issueId"],))
+
+        results = cursor.fetchall()
+        assert len(results) == 1
+        assert results[0]["title"] == test_case["expectedIssue"]["title"]
+        assert results[0]["description"] == test_case["expectedIssue"]["description"]
+
+        # Did the tags get updated?
+        for tag in test_case["expectedTags"]:
+            cursor.execute("""
+                SELECT *
+                FROM tag
+                WHERE
+                    issue_id = ? AND
+                    namespace = ? AND
+                    predicate = ? AND
+                    value = ?
+            """, (
+                test_case["issueId"],
                 tag["namespace"],
                 tag["predicate"],
                 tag["value"],
