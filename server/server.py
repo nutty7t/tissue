@@ -274,7 +274,8 @@ def issue_post_endpoint():
 
     return "Not implemented.", 501
 
-@app.route("/api/issue", methods=["PUT"])
+@app.route("/api/issue", methods=["PATCH", "PUT"])
+@app.route("/api/issue/<int:id>", methods=["PATCH", "PUT"])
 @validate_request_payload(require_id=True)
 def issue_put_endpoint():
     connection = get_database_connection()
@@ -284,47 +285,26 @@ def issue_put_endpoint():
             for issue in request.get_json()["data"]:
                 fetched_issue = fetch_issue(cursor, issue["id"])
                 if fetched_issue is None:
-                    create_issue(cursor, issue)
+                    if request.method == "PUT":
+                        # We can replace a resource if it doesn't exist...
+                        create_issue(cursor, issue)
+                    else:
+                        # ...but we can't patch it.
+                        return jsonify({"error": f"issue #{issue['id']} not found"}), 404
                 else:
-                    # Ensure that all fields are being updated. PUT has
-                    # replace semantics. For updating a subset of fields,
-                    # PATCH should be used.
-                    if "title" not in issue:
-                        issue["title"] = ""
-                    if "description" not in issue:
-                        issue["description"] = ""
-                    if "tags" not in issue:
-                        issue["tags"] = []
+                    # PUT has replace semantics so we must ensure that all
+                    # fields are being updated. For updating a subset of
+                    # fields, PATCH should be used.
+                    if request.method == "PUT":
+                        if "title" not in issue:
+                            issue["title"] = ""
+                        if "description" not in issue:
+                            issue["description"] = ""
+                        if "tags" not in issue:
+                            issue["tags"] = []
                     update_issue(cursor, issue["id"], issue)
 
             # [todo] Validate the issue(s) against Prolog rules.
-
-    except Exception as error:
-        print(error)
-        return jsonify({"error": str(error)}), 500
-
-    # [todo] Return the patched issue(s).
-
-    return "Not implemented.", 501
-
-@app.route("/api/issue", methods=["PATCH"])
-@app.route("/api/issue/<int:id>", methods=["PATCH"])
-@validate_request_payload(require_id=True)
-def issue_patch_endpoint(id):
-    connection = get_database_connection()
-    try:
-        with connection:
-            cursor = connection.cursor()
-            for issue in request.get_json()["data"]:
-                fetched_issue = fetched_issue(cursor, issue["id"])
-                if fetched_issue is None:
-                    return jsonify({"error": f"issue #{issue['id']} not found"}), 404
-                else:
-                    update_issue(cursor, issue["id"], issue)
-
-            # [todo] Validate the issue(s) against Prolog rules.
-            # Do it within the connection context so we can rollback
-            # if validation fails.
 
     except Exception as error:
         print(error)
