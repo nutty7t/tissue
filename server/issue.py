@@ -11,7 +11,7 @@ def validate_request_payload(
     require_issue_id=False,
     require_tag_fields=False,
 ):
-    """Validate JSON request payload.
+    """Validate JSON request payload for `/api/issue/*` endpoints.
 
     :param require_issue_title: issue 'title' field is required
     :param require_issue_id: 'id' field in issue is required
@@ -21,6 +21,8 @@ def validate_request_payload(
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+
+            # Schema for GET, POST, and PUT methods.
             request_schema = {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "definitions": {
@@ -29,12 +31,15 @@ def validate_request_payload(
                         "required": [],
                         "properties": {
                             "namespace": {
+                                "description": "Tag namespace.",
                                 "type": "string",
                             },
                             "predicate": {
+                                "description": "Tag predicate.",
                                 "type": "string",
                             },
                             "value": {
+                                "description": "Tag value.",
                                 "type": ["number", "string"],
                             },
                         },
@@ -44,9 +49,11 @@ def validate_request_payload(
                         "required": [],
                         "properties": {
                             "title": {
+                                "description": "Issue title.",
                                 "type": "string",
                             },
                             "description": {
+                                "description": "Issue description.",
                                 "type": "string",
                             },
                             "tags": {
@@ -89,7 +96,99 @@ def validate_request_payload(
                     "namespace", "predicate", "value",
                 ]
 
+            # Schema for PATCH method. Slightly modified from the official RFC
+            # 6902 specification schema to allow for patching a list of issues.
+            # http://json.schemastore.org/json-patch
+            json_patch_schema = {
+                "title": "JSON schema for JSONPatch files",
+                "$schema": "http://json-schema.org/draft-04/schema#",
+                "type": "array",
+                "definitions": {
+                    "operation": {
+                        "type": "object",
+                        "required": ["op", "path"],
+                        "allOf": [
+                            {
+                                "$ref": "#/definitions/path",
+                            },
+                        ],
+                        "oneOf": [
+                            {
+                                "required": ["value"],
+                                "properties": {
+                                    "op": {
+                                        "type": "string",
+                                        "enum": ["add", "replace", "test"],
+                                    },
+                                    "value": {
+                                        "description": \
+                                            "The value to add, replace or test."
+                                    },
+                                },
+                            },
+                            {
+                                "properties": {
+                                    "op": {
+                                        "description": \
+                                            "The operation to perform.",
+                                        "type": "string",
+                                        "enum": ["remove"],
+                                    },
+                                },
+                            },
+                            {
+                                "required": ["from"],
+                                "properties": {
+                                    "op": {
+                                        "description": \
+                                            "The operation to perform.",
+                                        "type": "string",
+                                        "enum": ["move", "copy"],
+                                    },
+                                    "from": {
+                                        "description": \
+                                            "A JSON Pointer path pointing to "
+                                            "the location to move/copy from.",
+                                        "type": "string",
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    "path": {
+                        "properties": {
+                            "path": {
+                                "description": "A JSON Pointer path.",
+                                "type": "string",
+                            },
+                        },
+                    },
+                    "patch": {
+                        "type": "array",
+                        "default": [],
+                        "items": {
+                            "$ref": "#/definitions/operation",
+                        },
+                    },
+                },
+                "oneOf": [
+                    {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "$ref": "#/definitions/patch",
+                        },
+                    },
+                    {
+                        "$ref": "#/definitions/patch",
+                    },
+                ],
+            }
+
             try:
+                if request.method == "PUT":
+                    request_schema = json_patch_schema
+
                 validate(
                     instance=request.get_json(),
                     schema=request_schema,
@@ -113,7 +212,7 @@ def payload(data={}, errors=[], status_code=200):
     """
     return jsonify({
         "data": data,
-        "errors": errors
+        "errors": errors,
     }), status_code
 
 
@@ -296,18 +395,17 @@ def put_issue_route():
             for issue in to_issue_list(request):
                 # Check if the issue exists in the database.
                 if get_issue(cursor, issue["id"]) is None:
-                        create_issue(cursor, issue)
+                    create_issue(cursor, issue)
                 else:
                     # PUT has replace semantics so we must ensure that all
                     # fields are being updated. For updating a subset of
                     # fields, PATCH should be used.
-                    if request.method == "PUT":
-                        if "title" not in issue:
-                            issue["title"] = ""
-                        if "description" not in issue:
-                            issue["description"] = ""
-                        if "tags" not in issue:
-                            issue["tags"] = []
+                    if "title" not in issue:
+                        issue["title"] = ""
+                    if "description" not in issue:
+                        issue["description"] = ""
+                    if "tags" not in issue:
+                        issue["tags"] = []
 
                     updated_issues.append(
                         replace_issue(
@@ -363,10 +461,10 @@ def replace_issue(cursor, id, fields):
     return get_issue(cursor, id)
 
 
-@blueprint.route("/api/issue", methods=["PATCH"])
-@validate_request_payload(require_issue_id=True)
-def patch_issue_route():
-    """Patch one or more issues.
+@blueprint.route("/api/issue<int:id>", methods=["PATCH"])
+@validate_request_payload()
+def patch_issue_route(id):
+    """Patch an issue.
 
     :raise 400: created issue violates integrity checks
     :raise 500: unexpected server error
